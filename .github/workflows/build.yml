@@ -31,7 +31,7 @@ jobs:
       - name: 检出内核源码
         run: |
           cd $HOME
-          git clone --depth=1 -b 16-HyperMiui-erofs https://github.com/kmerc224/bool-x_xiaomi_raphael.git
+          git clone --depth=1 -b lineage-22.2 https://github.com/LineageOS/android_kernel_xiaomi_sm8150.git bool-x_xiaomi_raphael
 
       # 4. 设置编译环境变量 并 开始编译
       - name: 编译内核
