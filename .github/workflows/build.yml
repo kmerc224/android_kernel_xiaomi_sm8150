@@ -1,18 +1,12 @@
-name: Build Kernel
-on: workflow_dispatch
-
-jobs:
-  build:
-    runs-on: ubuntu-22.04
-    steps:
-    - name: Build Kernel
-      uses: dabao1955/kernel_build_action@main
-      with:
-        kernel-url: https://github.com/LineageOS/android_kernel_xiaomi_sm8150.git
-        kernel-branch: lineage-23.2
-        config: vendor/sm8150-perf_defconfig
-        arch: arm64
-        aosp-clang: true
-        anykernel3: true
-        release: false
-        aosp-gcc: true
+- name: Build Kernel
+  uses: dabao1955/kernel_build_action@main
+  with:
+    kernel-url: https://github.com/LineageOS/android_kernel_xiaomi_sm8150.git
+    kernel-branch: lineage-23.2
+    config: vendor/sm8150-perf_defconfig
+    arch: arm64
+    aosp-clang: true
+    aosp-gcc: true
+    aosp-clang-version: r416183b
+    anykernel3: true
+    release: false
