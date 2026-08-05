@@ -15,3 +15,4 @@ jobs:
         aosp-clang: true
         anykernel3: true
         release: false
+        aosp-gcc: true
