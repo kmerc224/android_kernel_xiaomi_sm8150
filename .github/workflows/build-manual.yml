@@ -53,13 +53,27 @@ jobs:
             bc bison build-essential ccache cpio \
             flex git-core libssl-dev libelf-dev \
             python3 python3-pip rsync unzip wget zip \
-            unar
+            p7zip-full
           
-          # 验证解压工具可用
-          echo "Checking extraction tools..."
-          command -v unar && echo "unar: available" || echo "unar: not found"
-          command -v 7z && echo "7z: available" || echo "7z: not found"
-          command -v 7za && echo "7za: available" || echo "7za: not found"
+          # 验证 7z 命令
+          echo "Verifying 7z installation..."
+          which 7z || {
+            echo "7z not found in PATH, checking common locations..."
+            ls -la /usr/bin/7z* 2>/dev/null || echo "No 7z binaries in /usr/bin"
+            ls -la /bin/7z* 2>/dev/null || echo "No 7z binaries in /bin"
+          }
+          
+          # 测试 7z 命令
+          if command -v 7z &> /dev/null; then
+            echo "7z command found!"
+            7z | head -5
+          else
+            echo "WARNING: 7z command not found, will use Python fallback"
+          fi
+          
+          # 同时安装 Python 7z 库作为备选
+          pip3 install --break-system-packages py7zr
+          echo "Dependencies installed successfully"
 
       # ─────────────────────────────────────────────
       # 3. 下载 LLVM 22.0 完整工具链 (含 GCC 交叉编译器)
@@ -76,34 +90,36 @@ jobs:
           ls -lh toolchain/toolchain.7z
           echo "::endgroup::"
 
-          # 确定解压命令 (优先使用 unar, 其次 7z/7za)
-          EXTRACT_CMD=""
-          if command -v unar &> /dev/null; then
-            EXTRACT_CMD="unar"
-          elif command -v 7z &> /dev/null; then
-            EXTRACT_CMD="7z"
-          elif command -v 7za &> /dev/null; then
-            EXTRACT_CMD="7za"
-          else
-            echo "ERROR: No extraction tool found (tried: unar, 7z, 7za)"
-            exit 1
-          fi
-          echo "Using extraction tool: ${EXTRACT_CMD}"
-
           echo "::group::Extracting toolchain..."
-          case "${EXTRACT_CMD}" in
-            unar)
-              unar -o toolchain/ toolchain/toolchain.7z
-              ;;
-            7z|7za)
-              ${EXTRACT_CMD} x toolchain/toolchain.7z -otoolchain/ -y
-              ;;
-          esac
+          # 优先使用 7z 命令，如果不可用则使用 Python
+          if command -v 7z &> /dev/null; then
+            echo "Using 7z command..."
+            7z x toolchain/toolchain.7z -otoolchain/ -y
+          else
+            echo "7z not available, using Python py7zr..."
+            python3 << 'PYEOF'
+          import py7zr
+          import sys
+
+          archive_path = "toolchain/toolchain.7z"
+          extract_path = "toolchain/"
+
+          print(f"Extracting {archive_path} to {extract_path}...")
+          try:
+              with py7zr.SevenZipFile(archive_path, 'r') as archive:
+                  archive.extractall(path=extract_path)
+              print("Extraction completed successfully!")
+          except Exception as e:
+              print(f"ERROR: Extraction failed: {e}")
+              sys.exit(1)
+          PYEOF
+          fi
 
           # 检测解压后的顶层目录
           TOP_DIR=$(ls -d toolchain/*/ 2>/dev/null | head -1 | sed 's|/$||')
           if [ -z "${TOP_DIR}" ]; then
             echo "ERROR: Extraction failed, no directory found"
+            echo "Contents of toolchain/:"
             ls -la toolchain/
             exit 1
           fi
