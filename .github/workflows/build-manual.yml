@@ -52,7 +52,19 @@ jobs:
           sudo apt-get install -y \
             bc bison build-essential ccache cpio \
             flex git-core libssl-dev libelf-dev \
-            python3 rsync unzip wget zip p7zip-full
+            python3 rsync unzip wget zip p7zip-full p7zip-rar
+          
+          # 验证 7z 命令可用
+          if command -v 7z &> /dev/null; then
+            echo "7z command available"
+            7z --help | head -3
+          elif command -v 7za &> /dev/null; then
+            echo "7za command available (creating 7z alias)"
+            alias 7z='7za'
+          else
+            echo "ERROR: Neither 7z nor 7za found!"
+            exit 1
+          fi
 
       # ─────────────────────────────────────────────
       # 3. 下载 LLVM 22.0 完整工具链 (含 GCC 交叉编译器)
@@ -68,8 +80,20 @@ jobs:
           wget --no-verbose "${TOOLCHAIN_URL}" -O toolchain/toolchain.7z
           echo "::endgroup::"
 
+          # 确定 7z 命令
+          SEVENZ="7z"
+          if ! command -v 7z &> /dev/null; then
+            if command -v 7za &> /dev/null; then
+              SEVENZ="7za"
+            else
+              echo "ERROR: 7z command not found!"
+              exit 1
+            fi
+          fi
+          echo "Using: ${SEVENZ}"
+
           echo "::group::Extracting toolchain..."
-          7z x toolchain/toolchain.7z -otoolchain/ -y
+          ${SEVENZ} x toolchain/toolchain.7z -otoolchain/ -y
 
           # 检测解压后的顶层目录
           TOP_DIR=$(ls -d toolchain/*/ 2>/dev/null | head -1 | sed 's|/$||')
