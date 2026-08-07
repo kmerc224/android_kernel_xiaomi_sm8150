@@ -47,27 +47,3 @@ CONFIG_WIREGUARD=y
 CONFIG_DRM_MSM_KCAL_CTRL=y
 CONFIG_MSM_THERMAL_SIMPLE=y
 CONFIG_DSI_FEATURES=y
-
-# =============================================
-# HyperOS/MIUI 集成配置 (由 integration-script.sh 追加)
-# =============================================
-
-# 小米触控特性 (来自 MiCode)
-CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE=y
-CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE_PALMSENSOR=y
-CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE_GAMEMODE=y
-
-# KProfiles (来自 Bool-X)
-CONFIG_KPROFILES=y
-
-# =============================================
-# HyperOS/MIUI 集成配置 (由 integration-script.sh 追加)
-# =============================================
-
-# 小米触控特性 (来自 MiCode)
-CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE=y
-CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE_PALMSENSOR=y
-CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE_GAMEMODE=y
-
-# KProfiles (来自 Bool-X)
-CONFIG_KPROFILES=y

@@ -21,3 +21,33 @@ config SPI_XIAOMI_TP
 	default y if TOUCHSCREEN_NT36xxx_HOSTDL_SPI
 	help
 		Say Y if want use xiaomi touch panel.
+
+# --- 来自 MiCode: 小米触控特性 ---
+config TOUCHSCREEN_XIAOMI_TOUCHFEATURE
+	tristate "Xiaomi touch feature"
+	depends on INPUT_TOUCHSCREEN
+	help
+	  Enable Xiaomi touch feature support.
+
+config TOUCHSCREEN_XIAOMI_TOUCHFEATURE_PALMSENSOR
+	tristate "Xiaomi touch palm sensor"
+	depends on TOUCHSCREEN_XIAOMI_TOUCHFEATURE
+
+config TOUCHSCREEN_XIAOMI_TOUCHFEATURE_GAMEMODE
+	tristate "Xiaomi touch game mode"
+	depends on TOUCHSCREEN_XIAOMI_TOUCHFEATURE
+
+# --- 来自 MiCode: 小米触控特性 ---
+config TOUCHSCREEN_XIAOMI_TOUCHFEATURE
+	tristate "Xiaomi touch feature"
+	depends on INPUT_TOUCHSCREEN
+	help
+	  Enable Xiaomi touch feature support.
+
+config TOUCHSCREEN_XIAOMI_TOUCHFEATURE_PALMSENSOR
+	tristate "Xiaomi touch palm sensor"
+	depends on TOUCHSCREEN_XIAOMI_TOUCHFEATURE
+
+config TOUCHSCREEN_XIAOMI_TOUCHFEATURE_GAMEMODE
+	tristate "Xiaomi touch game mode"
+	depends on TOUCHSCREEN_XIAOMI_TOUCHFEATURE

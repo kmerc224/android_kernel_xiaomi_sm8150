@@ -652,3 +652,15 @@ config OKL4_LINK_SHBUF
 	      transport. This driver presents the link to Linux as a character device
 	      which can be written to or read from to access the shared memory. An ioctl
 	      on the device is used to send a virtual interrupt to the partner cell.
+
+# --- 来自 Bool-X: KProfiles ---
+config KPROFILES
+	bool "Kernel Profiles support"
+	help
+	  Kernel-level performance profiles for HyperOS/MIUI.
+
+# --- 来自 Bool-X: KProfiles ---
+config KPROFILES
+	bool "Kernel Profiles support"
+	help
+	  Kernel-level performance profiles for HyperOS/MIUI.

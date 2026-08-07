@@ -4,3 +4,9 @@ obj-$(CONFIG_TOUCHSCREEN_NT36523_HOSTDL_SPI) += nt36523/
 obj-$(CONFIG_TOUCHSCREEN_NT36xxx_HOSTDL_SPI) += nt36672c/
 obj-$(CONFIG_INPUT_PRESS_NDT) += ndt_core.o
 obj-$(CONFIG_SPI_XIAOMI_TP) += spi-xiaomi-tp.o
+
+# --- 来自 MiCode ---
+obj-$(CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE) += xiaomi_touch.o
+
+# --- 来自 MiCode ---
+obj-$(CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE) += xiaomi_touch.o

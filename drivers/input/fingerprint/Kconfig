@@ -15,3 +15,4 @@ source "drivers/input/fingerprint/goodix_ta/Kconfig"
 source "drivers/input/fingerprint/fpc_tee/Kconfig"
 
 endif
+source "drivers/input/fingerprint/goodix_ta_capa/Kconfig"
