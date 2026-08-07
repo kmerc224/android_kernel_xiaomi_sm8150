@@ -129,13 +129,36 @@ jobs:
           echo "GCC64_BIN=${GCC64_BIN}" >> $GITHUB_ENV
           echo "GCC32_BIN=${GCC32_BIN}" >> $GITHUB_ENV
 
+          # 调试: 列出实际可用的 GCC 二进制
+          echo "=== GCC aarch64 binaries ==="
+          ls "${GCC64_BIN}/" | grep -E 'gcc$' || echo "(none found)"
+          echo "=== GCC arm32 binaries ==="
+          ls "${GCC32_BIN}/" | grep -E 'gcc$' || echo "(none found)"
+
           # 打印编译器版本
           echo "=== Clang Version ==="
           clang --version
+
           echo "=== GCC aarch64 Version ==="
-          aarch64-linux-android-gcc --version
+          # AOSP GCC 4.9 二进制名可能是 aarch64-linux-android-gcc 或 aarch64-linux-androidkernel-gcc
+          if command -v aarch64-linux-android-gcc &>/dev/null; then
+            aarch64-linux-android-gcc --version
+          elif command -v aarch64-linux-androidkernel-gcc &>/dev/null; then
+            aarch64-linux-androidkernel-gcc --version
+          else
+            echo "ERROR: No aarch64 GCC found!"
+            exit 1
+          fi
+
           echo "=== GCC arm32 Version ==="
-          arm-linux-androideabi-gcc --version
+          if command -v arm-linux-androideabi-gcc &>/dev/null; then
+            arm-linux-androideabi-gcc --version
+          elif command -v arm-linux-androideabikernel-gcc &>/dev/null; then
+            arm-linux-androideabikernel-gcc --version
+          else
+            echo "ERROR: No arm32 GCC found!"
+            exit 1
+          fi
 
       # ─────────────────────────────────────────────
       # 7. 编译内核
@@ -166,6 +189,30 @@ jobs:
               arch/arm64/configs/vendor/xiaomi/raphael.config || true
           fi
 
+          # ── 自动检测 GCC 交叉编译前缀 ──
+          GCC64_PREFIX=""
+          if ls "${TOOLCHAIN_GCC64}/bin"/aarch64-linux-android-gcc >/dev/null 2>&1; then
+            GCC64_PREFIX="aarch64-linux-android-"
+          elif ls "${TOOLCHAIN_GCC64}/bin"/aarch64-linux-androidkernel-gcc >/dev/null 2>&1; then
+            GCC64_PREFIX="aarch64-linux-androidkernel-"
+          else
+            echo "WARNING: No AOSP GCC aarch64 found, using Clang only"
+            GCC64_PREFIX=""
+          fi
+
+          GCC32_PREFIX=""
+          if ls "${TOOLCHAIN_GCC32}/bin"/arm-linux-androideabi-gcc >/dev/null 2>&1; then
+            GCC32_PREFIX="arm-linux-androideabi-"
+          elif ls "${TOOLCHAIN_GCC32}/bin"/arm-linux-androideabikernel-gcc >/dev/null 2>&1; then
+            GCC32_PREFIX="arm-linux-androideabikernel-"
+          else
+            echo "WARNING: No AOSP GCC arm32 found"
+            GCC32_PREFIX=""
+          fi
+
+          echo "Detected GCC64 prefix: ${GCC64_PREFIX:-'(none)'}"
+          echo "Detected GCC32 prefix: ${GCC32_PREFIX:-'(none)'}"
+
           # ── 开始编译 ──
           CCACHE=""
           if [ "${{ github.event.inputs.enable_ccache }}" = "true" ]; then
@@ -177,8 +224,8 @@ jobs:
             SUBARCH=arm64 \
             CC="${CCACHE} clang" \
             CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-android- \
-            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+            CROSS_COMPILE="${GCC64_PREFIX}" \
+            CROSS_COMPILE_ARM32="${GCC32_PREFIX}" \
             AR=llvm-ar \
             AS=llvm-as \
             NM=llvm-nm \
