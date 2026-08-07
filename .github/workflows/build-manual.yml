@@ -52,19 +52,14 @@ jobs:
           sudo apt-get install -y \
             bc bison build-essential ccache cpio \
             flex git-core libssl-dev libelf-dev \
-            python3 rsync unzip wget zip p7zip-full p7zip-rar
+            python3 python3-pip rsync unzip wget zip \
+            unar
           
-          # 验证 7z 命令可用
-          if command -v 7z &> /dev/null; then
-            echo "7z command available"
-            7z --help | head -3
-          elif command -v 7za &> /dev/null; then
-            echo "7za command available (creating 7z alias)"
-            alias 7z='7za'
-          else
-            echo "ERROR: Neither 7z nor 7za found!"
-            exit 1
-          fi
+          # 验证解压工具可用
+          echo "Checking extraction tools..."
+          command -v unar && echo "unar: available" || echo "unar: not found"
+          command -v 7z && echo "7z: available" || echo "7z: not found"
+          command -v 7za && echo "7za: available" || echo "7za: not found"
 
       # ─────────────────────────────────────────────
       # 3. 下载 LLVM 22.0 完整工具链 (含 GCC 交叉编译器)
@@ -78,27 +73,38 @@ jobs:
           echo "::group::Downloading LLVM 22.0 full toolchain..."
           echo "URL: ${TOOLCHAIN_URL}"
           wget --no-verbose "${TOOLCHAIN_URL}" -O toolchain/toolchain.7z
+          ls -lh toolchain/toolchain.7z
           echo "::endgroup::"
 
-          # 确定 7z 命令
-          SEVENZ="7z"
-          if ! command -v 7z &> /dev/null; then
-            if command -v 7za &> /dev/null; then
-              SEVENZ="7za"
-            else
-              echo "ERROR: 7z command not found!"
-              exit 1
-            fi
+          # 确定解压命令 (优先使用 unar, 其次 7z/7za)
+          EXTRACT_CMD=""
+          if command -v unar &> /dev/null; then
+            EXTRACT_CMD="unar"
+          elif command -v 7z &> /dev/null; then
+            EXTRACT_CMD="7z"
+          elif command -v 7za &> /dev/null; then
+            EXTRACT_CMD="7za"
+          else
+            echo "ERROR: No extraction tool found (tried: unar, 7z, 7za)"
+            exit 1
           fi
-          echo "Using: ${SEVENZ}"
+          echo "Using extraction tool: ${EXTRACT_CMD}"
 
           echo "::group::Extracting toolchain..."
-          ${SEVENZ} x toolchain/toolchain.7z -otoolchain/ -y
+          case "${EXTRACT_CMD}" in
+            unar)
+              unar -o toolchain/ toolchain/toolchain.7z
+              ;;
+            7z|7za)
+              ${EXTRACT_CMD} x toolchain/toolchain.7z -otoolchain/ -y
+              ;;
+          esac
 
           # 检测解压后的顶层目录
           TOP_DIR=$(ls -d toolchain/*/ 2>/dev/null | head -1 | sed 's|/$||')
           if [ -z "${TOP_DIR}" ]; then
             echo "ERROR: Extraction failed, no directory found"
+            ls -la toolchain/
             exit 1
           fi
           echo "Extracted to: ${TOP_DIR}"
