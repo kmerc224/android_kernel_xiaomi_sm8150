@@ -52,27 +52,13 @@ jobs:
           sudo apt-get install -y \
             bc bison build-essential ccache cpio \
             flex git-core libssl-dev libelf-dev \
-            python3 python3-pip rsync unzip wget zip \
+            rsync unzip wget zip \
             p7zip-full
           
           # 验证 7z 命令
           echo "Verifying 7z installation..."
-          which 7z || {
-            echo "7z not found in PATH, checking common locations..."
-            ls -la /usr/bin/7z* 2>/dev/null || echo "No 7z binaries in /usr/bin"
-            ls -la /bin/7z* 2>/dev/null || echo "No 7z binaries in /bin"
-          }
-          
-          # 测试 7z 命令
-          if command -v 7z &> /dev/null; then
-            echo "7z command found!"
-            7z | head -5
-          else
-            echo "WARNING: 7z command not found, will use Python fallback"
-          fi
-          
-          # 同时安装 Python 7z 库作为备选
-          pip3 install --break-system-packages py7zr
+          which 7z
+          7z | head -3
           echo "Dependencies installed successfully"
 
       # ─────────────────────────────────────────────
@@ -91,29 +77,7 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::Extracting toolchain..."
-          # 优先使用 7z 命令，如果不可用则使用 Python
-          if command -v 7z &> /dev/null; then
-            echo "Using 7z command..."
-            7z x toolchain/toolchain.7z -otoolchain/ -y
-          else
-            echo "7z not available, using Python py7zr..."
-            python3 << 'PYEOF'
-          import py7zr
-          import sys
-
-          archive_path = "toolchain/toolchain.7z"
-          extract_path = "toolchain/"
-
-          print(f"Extracting {archive_path} to {extract_path}...")
-          try:
-              with py7zr.SevenZipFile(archive_path, 'r') as archive:
-                  archive.extractall(path=extract_path)
-              print("Extraction completed successfully!")
-          except Exception as e:
-              print(f"ERROR: Extraction failed: {e}")
-              sys.exit(1)
-          PYEOF
-          fi
+          7z x toolchain/toolchain.7z -otoolchain/ -y
 
           # 检测解压后的顶层目录
           TOP_DIR=$(ls -d toolchain/*/ 2>/dev/null | head -1 | sed 's|/$||')
