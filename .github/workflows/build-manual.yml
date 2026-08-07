@@ -61,28 +61,25 @@ jobs:
       # 3. 下载 AOSP Clang 22.0 (r596125)
       # ─────────────────────────────────────────────
       - name: Download AOSP Clang 22.0 (r596125)
+        env:
+          CLANG_VERSION: r596125
+          CLANG_BRANCH: android17-release
         run: |
           mkdir -p toolchain
-          echo "::group::Downloading AOSP Clang r596125..."
-          git clone --depth=1 \
-            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
-            -b clang-r596125 \
-            toolchain/clang-repo || {
-            echo "googlesource clone failed, trying mirror..."
-            wget -q https://github.com/bachnxuan/aosp_clang_mirror/releases/download/clang-r596125-15682573/clang-r596125.tar.gz \
-              -O toolchain/clang-r596125.tar.gz
-            mkdir -p toolchain/clang
-            tar -xzf toolchain/clang-r596125.tar.gz -C toolchain/clang --strip-components=1
-          }
-          # 如果用的是 git clone 方式, clang 目录在 repo 内
-          if [ -d "toolchain/clang-repo/clang-r596125" ]; then
-            mv toolchain/clang-repo/clang-r596125 toolchain/clang
-            rm -rf toolchain/clang-repo
-          elif [ ! -d "toolchain/clang/bin" ]; then
-            echo "ERROR: Clang toolchain not found"
-            exit 1
-          fi
+          echo "::group::Downloading AOSP Clang ${CLANG_VERSION} from AOSP..."
+
+          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/${CLANG_BRANCH}/clang-${CLANG_VERSION}.tar.gz"
+          echo "Downloading: ${CLANG_URL}"
+          wget --no-verbose "${CLANG_URL}" -O toolchain/clang-${CLANG_VERSION}.tar.gz
+
+          # +archive 下载的是目录内容, 直接解压到目标
+          mkdir -p toolchain/clang
+          tar -xzf toolchain/clang-${CLANG_VERSION}.tar.gz -C toolchain/clang
+          rm -f toolchain/clang-${CLANG_VERSION}.tar.gz
           echo "::endgroup::"
+
+          # 验证
+          ls -la toolchain/clang/bin/clang
           toolchain/clang/bin/clang --version
 
       # ─────────────────────────────────────────────
@@ -91,14 +88,15 @@ jobs:
       - name: Download AOSP GCC cross-compilers
         run: |
           mkdir -p toolchain
-          echo "::group::Downloading GCC aarch64..."
+
+          echo "::group::Downloading GCC aarch64 from AOSP..."
           git clone --depth=1 \
             https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 \
             -b android12L-release \
             toolchain/gcc-arm64
           echo "::endgroup::"
 
-          echo "::group::Downloading GCC arm32..."
+          echo "::group::Downloading GCC arm32 from AOSP..."
           git clone --depth=1 \
             https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 \
             -b android12L-release \
