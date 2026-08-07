@@ -1,0 +1,280 @@
+name: Build Kernel (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      enable_ccache:
+        description: 'Enable ccache (accelerate recompilation)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      release_kernel:
+        description: 'Publish kernel to GitHub Releases'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Kernel (AOSP Clang 22.0)
+    runs-on: ubuntu-22.04
+    env:
+      KERNEL_DIR: ${{ github.workspace }}/kernel
+      TOOLCHAIN_CLANG: ${{ github.workspace }}/toolchain/clang
+      TOOLCHAIN_GCC64: ${{ github.workspace }}/toolchain/gcc-arm64
+      TOOLCHAIN_GCC32: ${{ github.workspace }}/toolchain/gcc-arm
+      OUT_DIR: ${{ github.workspace }}/out
+
+    steps:
+      # ─────────────────────────────────────────────
+      # 1. 检出仓库
+      # ─────────────────────────────────────────────
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          repository: kmerc224/android_kernel_xiaomi_sm8150
+          ref: lineage-22.2
+          path: kernel
+
+      # ─────────────────────────────────────────────
+      # 2. 安装依赖
+      # ─────────────────────────────────────────────
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential ccache cpio \
+            flex git-core libssl-dev libelf-dev \
+            python3 rsync unzip wget zip \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+
+      # ─────────────────────────────────────────────
+      # 3. 下载 AOSP Clang 22.0 (r596125)
+      # ─────────────────────────────────────────────
+      - name: Download AOSP Clang 22.0 (r596125)
+        run: |
+          mkdir -p toolchain
+          echo "::group::Downloading AOSP Clang r596125..."
+          git clone --depth=1 \
+            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
+            -b clang-r596125 \
+            toolchain/clang-repo || {
+            echo "googlesource clone failed, trying mirror..."
+            wget -q https://github.com/bachnxuan/aosp_clang_mirror/releases/download/clang-r596125-15682573/clang-r596125.tar.gz \
+              -O toolchain/clang-r596125.tar.gz
+            mkdir -p toolchain/clang
+            tar -xzf toolchain/clang-r596125.tar.gz -C toolchain/clang --strip-components=1
+          }
+          # 如果用的是 git clone 方式, clang 目录在 repo 内
+          if [ -d "toolchain/clang-repo/clang-r596125" ]; then
+            mv toolchain/clang-repo/clang-r596125 toolchain/clang
+            rm -rf toolchain/clang-repo
+          elif [ ! -d "toolchain/clang/bin" ]; then
+            echo "ERROR: Clang toolchain not found"
+            exit 1
+          fi
+          echo "::endgroup::"
+          toolchain/clang/bin/clang --version
+
+      # ─────────────────────────────────────────────
+      # 4. 下载 AOSP GCC 交叉编译器
+      # ─────────────────────────────────────────────
+      - name: Download AOSP GCC cross-compilers
+        run: |
+          mkdir -p toolchain
+          echo "::group::Downloading GCC aarch64..."
+          git clone --depth=1 \
+            https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 \
+            -b android12L-release \
+            toolchain/gcc-arm64
+          echo "::endgroup::"
+
+          echo "::group::Downloading GCC arm32..."
+          git clone --depth=1 \
+            https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 \
+            -b android12L-release \
+            toolchain/gcc-arm
+          echo "::endgroup::"
+
+      # ─────────────────────────────────────────────
+      # 5. 配置 ccache (可选)
+      # ─────────────────────────────────────────────
+      - name: Setup ccache
+        if: github.event.inputs.enable_ccache == 'true'
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          max-size: 2G
+          key: kernel-sm8150-clang22
+
+      # ─────────────────────────────────────────────
+      # 6. 设置环境变量
+      # ─────────────────────────────────────────────
+      - name: Setup environment
+        run: |
+          CLANG_BIN="${TOOLCHAIN_CLANG}/bin"
+          GCC64_BIN="${TOOLCHAIN_GCC64}/bin"
+          GCC32_BIN="${TOOLCHAIN_GCC32}/bin"
+
+          export PATH="${CLANG_BIN}:${GCC64_BIN}:${GCC32_BIN}:${PATH}"
+
+          echo "PATH=${PATH}" >> $GITHUB_ENV
+          echo "CLANG_BIN=${CLANG_BIN}" >> $GITHUB_ENV
+          echo "GCC64_BIN=${GCC64_BIN}" >> $GITHUB_ENV
+          echo "GCC32_BIN=${GCC32_BIN}" >> $GITHUB_ENV
+
+          # 打印编译器版本
+          echo "=== Clang Version ==="
+          clang --version
+          echo "=== GCC aarch64 Version ==="
+          aarch64-linux-android-gcc --version
+          echo "=== GCC arm32 Version ==="
+          arm-linux-androideabi-gcc --version
+
+      # ─────────────────────────────────────────────
+      # 7. 编译内核
+      # ─────────────────────────────────────────────
+      - name: Build kernel
+        run: |
+          cd "${KERNEL_DIR}"
+          mkdir -p "${OUT_DIR}"
+
+          # ── 基础 defconfig ──
+          make O="${OUT_DIR}" \
+            ARCH=arm64 \
+            SUBARCH=arm64 \
+            vendor/sm8150-perf_defconfig
+
+          # ── 叠加小米设备配置片段 (如果有) ──
+          if [ -f "arch/arm64/configs/vendor/xiaomi/sm8150-common.config" ]; then
+            echo "Applying xiaomi sm8150-common.config fragment..."
+            scripts/kconfig/merge_config.sh -O "${OUT_DIR}" -m \
+              "${OUT_DIR}/.config" \
+              arch/arm64/configs/vendor/xiaomi/sm8150-common.config || true
+          fi
+
+          if [ -f "arch/arm64/configs/vendor/xiaomi/raphael.config" ]; then
+            echo "Applying xiaomi raphael.config fragment..."
+            scripts/kconfig/merge_config.sh -O "${OUT_DIR}" -m \
+              "${OUT_DIR}/.config" \
+              arch/arm64/configs/vendor/xiaomi/raphael.config || true
+          fi
+
+          # ── 开始编译 ──
+          CCACHE=""
+          if [ "${{ github.event.inputs.enable_ccache }}" = "true" ]; then
+            CCACHE="ccache"
+          fi
+
+          make -j$(nproc --all) O="${OUT_DIR}" \
+            ARCH=arm64 \
+            SUBARCH=arm64 \
+            CC="${CCACHE} clang" \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+            AR=llvm-ar \
+            AS=llvm-as \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            LD=ld.lld \
+            LDFLAGS="--lto-O0" \
+            CC_HOST_TOOLCHAIN="${CLANG_BIN}" \
+            HOSTCC=clang \
+            HOSTCXX=clang \
+            HOSTAR=llvm-ar \
+            HOSTLD=ld.lld \
+            Image.gz 2>&1 | tee build.log
+
+          echo "Build exit code: ${PIPESTATUS[0]}"
+
+      # ─────────────────────────────────────────────
+      # 8. 检查产物
+      # ─────────────────────────────────────────────
+      - name: Check build output
+        run: |
+          echo "=== Build artifacts ==="
+          ls -lah "${OUT_DIR}/arch/arm64/boot/" || true
+          ls -lah "${OUT_DIR}/arch/arm64/boot/Image.gz" 2>/dev/null || {
+            echo "ERROR: Image.gz not found!"
+            exit 1
+          }
+          echo "=== Kernel size ==="
+          du -h "${OUT_DIR}/arch/arm64/boot/Image.gz"
+
+      # ─────────────────────────────────────────────
+      # 9. AnyKernel3 打包
+      # ─────────────────────────────────────────────
+      - name: Package with AnyKernel3
+        run: |
+          echo "::group::Cloning AnyKernel3..."
+          git clone --depth=1 \
+            https://github.com/osm0sis/AnyKernel3.git \
+            AnyKernel3
+          echo "::endgroup::"
+
+          # 配置 AnyKernel3 (raphael = K20 Pro / Mi 9T Pro)
+          cd AnyKernel3
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' anykernel.sh
+          sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' anykernel.sh
+          sed -i 's/IS_SLOT_DEVICE=0;/IS_SLOT_DEVICE=auto;/g' anykernel.sh
+
+          # 复制内核镜像
+          cp "${OUT_DIR}/arch/arm64/boot/Image.gz" .
+
+          # 复制 DTBO (如果存在)
+          if [ -f "${OUT_DIR}/arch/arm64/boot/dtbo.img" ]; then
+            cp "${OUT_DIR}/arch/arm64/boot/dtbo.img" .
+          fi
+
+          # 打包
+          ZIP_NAME="AnyKernel3-raphael-$(date +%Y%m%d-%H%M).zip"
+          zip -r9 "${ZIP_NAME}" . -x .git\* .github\* \*.zip
+          mv "${ZIP_NAME}" "${GITHUB_WORKSPACE}/"
+          echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
+
+      # ─────────────────────────────────────────────
+      # 10. 上传产物
+      # ─────────────────────────────────────────────
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-output
+          path: |
+            ${{ env.OUT_DIR }}/arch/arm64/boot/Image.gz
+            ${{ env.ZIP_NAME }}
+            ${{ env.KERNEL_DIR }}/build.log
+
+      # ─────────────────────────────────────────────
+      # 11. 发布到 GitHub Releases (可选)
+      # ─────────────────────────────────────────────
+      - name: Release kernel
+        if: github.event.inputs.release_kernel == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: kernel-16-Hyper-${{ github.run_number }}
+          name: "Kernel 16-Hyper (AOSP Clang 22.0) #${{ github.run_number }}"
+          files: |
+            ${{ env.ZIP_NAME }}
+            ${{ env.OUT_DIR }}/arch/arm64/boot/Image.gz
+          body: |
+            ## Kernel Build Info
+            - **Branch**: lineage-22.2
+            - **Device**: Xiaomi K20 Pro (raphael)
+            - **Compiler**: AOSP Clang 22.0.2 (r596125)
+            - **Defconfig**: vendor/sm8150-perf_defconfig + xiaomi fragments
+            - **Build**: ${{ github.run_number }}
+            - **Date**: $(date '+%Y-%m-%d %H:%M:%S UTC')
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
