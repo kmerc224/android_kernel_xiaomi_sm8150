@@ -52,13 +52,28 @@ jobs:
           sudo apt-get install -y \
             bc bison build-essential ccache cpio \
             flex git-core libssl-dev libelf-dev \
-            rsync unzip wget zip \
-            p7zip-full
+            rsync unzip wget zip
           
-          # 验证 7z 命令
-          echo "Verifying 7z installation..."
-          which 7z
-          7z | head -3
+          # 手动安装 7-Zip (从官方下载二进制文件)
+          echo "Installing 7-Zip..."
+          wget -q https://github.com/ip7z/7zip/releases/download/24.09/7z2409-linux-x64.tar.xz -O /tmp/7zip.tar.xz
+          mkdir -p /tmp/7zip
+          tar -xf /tmp/7zip.tar.xz -C /tmp/7zip
+          
+          # 找到 7z 二进制文件并复制到 PATH
+          find /tmp/7zip -name "7z" -o -name "7zz" | head -1
+          SEVENZ_BIN=$(find /tmp/7zip -name "7z" -o -name "7zz" | head -1)
+          if [ -n "${SEVENZ_BIN}" ]; then
+            sudo cp "${SEVENZ_BIN}" /usr/local/bin/7z
+            sudo chmod +x /usr/local/bin/7z
+            echo "7z installed to /usr/local/bin/7z"
+            7z --help | head -5
+          else
+            echo "ERROR: Could not find 7z binary in archive"
+            ls -la /tmp/7zip/
+            exit 1
+          fi
+          
           echo "Dependencies installed successfully"
 
       # ─────────────────────────────────────────────
