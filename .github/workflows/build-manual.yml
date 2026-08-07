@@ -25,13 +25,11 @@ permissions:
 
 jobs:
   build:
-    name: Build Kernel (AOSP Clang 22.0)
+    name: Build Kernel (LLVM 22.0 Full Toolchain)
     runs-on: ubuntu-22.04
     env:
       KERNEL_DIR: ${{ github.workspace }}/kernel
-      TOOLCHAIN_CLANG: ${{ github.workspace }}/toolchain/clang
-      TOOLCHAIN_GCC64: ${{ github.workspace }}/toolchain/gcc-arm64
-      TOOLCHAIN_GCC32: ${{ github.workspace }}/toolchain/gcc-arm
+      TOOLCHAIN: ${{ github.workspace }}/toolchain/clang
       OUT_DIR: ${{ github.workspace }}/out
 
     steps:
@@ -54,57 +52,49 @@ jobs:
           sudo apt-get install -y \
             bc bison build-essential ccache cpio \
             flex git-core libssl-dev libelf-dev \
-            python3 rsync unzip wget zip \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+            python3 rsync unzip wget zip p7zip-full
 
       # ─────────────────────────────────────────────
-      # 3. 下载 AOSP Clang 22.0 (r596125)
+      # 3. 下载 LLVM 22.0 完整工具链 (含 GCC 交叉编译器)
+      #    来源: Mandi-Sa/clang (Full LTO + PGO + BOLT)
       # ─────────────────────────────────────────────
-      - name: Download AOSP Clang 22.0 (r596125)
-        env:
-          CLANG_VERSION: r596125
-          CLANG_BRANCH: android17-release
+      - name: Download LLVM 22.0 full toolchain
         run: |
           mkdir -p toolchain
-          echo "::group::Downloading AOSP Clang ${CLANG_VERSION} from AOSP..."
 
-          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/${CLANG_BRANCH}/clang-${CLANG_VERSION}.tar.gz"
-          echo "Downloading: ${CLANG_URL}"
-          wget --no-verbose "${CLANG_URL}" -O toolchain/clang-${CLANG_VERSION}.tar.gz
-
-          # +archive 下载的是目录内容, 直接解压到目标
-          mkdir -p toolchain/clang
-          tar -xzf toolchain/clang-${CLANG_VERSION}.tar.gz -C toolchain/clang
-          rm -f toolchain/clang-${CLANG_VERSION}.tar.gz
+          TOOLCHAIN_URL="https://github.com/Mandi-Sa/clang/releases/download/amd64-full-toolchain-22/llvm22.0.0-binutils2.45.1_amd64-full-toolchain-20260101.7z"
+          echo "::group::Downloading LLVM 22.0 full toolchain..."
+          echo "URL: ${TOOLCHAIN_URL}"
+          wget --no-verbose "${TOOLCHAIN_URL}" -O toolchain/toolchain.7z
           echo "::endgroup::"
 
-          # 验证
-          ls -la toolchain/clang/bin/clang
+          echo "::group::Extracting toolchain..."
+          7z x toolchain/toolchain.7z -otoolchain/ -y
+
+          # 检测解压后的顶层目录
+          TOP_DIR=$(ls -d toolchain/*/ 2>/dev/null | head -1 | sed 's|/$||')
+          if [ -z "${TOP_DIR}" ]; then
+            echo "ERROR: Extraction failed, no directory found"
+            exit 1
+          fi
+          echo "Extracted to: ${TOP_DIR}"
+
+          # 移动到目标路径
+          mv "${TOP_DIR}" toolchain/clang
+          rm -f toolchain/toolchain.7z
+          echo "::endgroup::"
+
+          # 显示目录结构
+          echo "=== Toolchain structure ==="
+          ls toolchain/clang/
+          echo "=== bin/ contents (compilers) ==="
+          ls toolchain/clang/bin/ | grep -E '^(clang|ld|llvm-ar|aarch64|arm)' | head -20
+
+          # 验证 Clang
           toolchain/clang/bin/clang --version
 
       # ─────────────────────────────────────────────
-      # 4. 下载 AOSP GCC 交叉编译器
-      # ─────────────────────────────────────────────
-      - name: Download AOSP GCC cross-compilers
-        run: |
-          mkdir -p toolchain
-
-          echo "::group::Downloading GCC aarch64 from AOSP..."
-          git clone --depth=1 \
-            https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 \
-            -b android12L-release \
-            toolchain/gcc-arm64
-          echo "::endgroup::"
-
-          echo "::group::Downloading GCC arm32 from AOSP..."
-          git clone --depth=1 \
-            https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 \
-            -b android12L-release \
-            toolchain/gcc-arm
-          echo "::endgroup::"
-
-      # ─────────────────────────────────────────────
-      # 5. 配置 ccache (可选)
+      # 4. 配置 ccache (可选)
       # ─────────────────────────────────────────────
       - name: Setup ccache
         if: github.event.inputs.enable_ccache == 'true'
@@ -114,54 +104,45 @@ jobs:
           key: kernel-sm8150-clang22
 
       # ─────────────────────────────────────────────
-      # 6. 设置环境变量
+      # 5. 设置环境变量
       # ─────────────────────────────────────────────
       - name: Setup environment
         run: |
-          CLANG_BIN="${TOOLCHAIN_CLANG}/bin"
-          GCC64_BIN="${TOOLCHAIN_GCC64}/bin"
-          GCC32_BIN="${TOOLCHAIN_GCC32}/bin"
-
-          export PATH="${CLANG_BIN}:${GCC64_BIN}:${GCC32_BIN}:${PATH}"
+          TOOLCHAIN_BIN="${TOOLCHAIN}/bin"
+          export PATH="${TOOLCHAIN_BIN}:${PATH}"
 
           echo "PATH=${PATH}" >> $GITHUB_ENV
-          echo "CLANG_BIN=${CLANG_BIN}" >> $GITHUB_ENV
-          echo "GCC64_BIN=${GCC64_BIN}" >> $GITHUB_ENV
-          echo "GCC32_BIN=${GCC32_BIN}" >> $GITHUB_ENV
-
-          # 调试: 列出实际可用的 GCC 二进制
-          echo "=== GCC aarch64 binaries ==="
-          ls "${GCC64_BIN}/" | grep -E 'gcc$' || echo "(none found)"
-          echo "=== GCC arm32 binaries ==="
-          ls "${GCC32_BIN}/" | grep -E 'gcc$' || echo "(none found)"
+          echo "TOOLCHAIN_BIN=${TOOLCHAIN_BIN}" >> $GITHUB_ENV
 
           # 打印编译器版本
           echo "=== Clang Version ==="
           clang --version
 
-          echo "=== GCC aarch64 Version ==="
-          # AOSP GCC 4.9 二进制名可能是 aarch64-linux-android-gcc 或 aarch64-linux-androidkernel-gcc
-          if command -v aarch64-linux-android-gcc &>/dev/null; then
-            aarch64-linux-android-gcc --version
-          elif command -v aarch64-linux-androidkernel-gcc &>/dev/null; then
-            aarch64-linux-androidkernel-gcc --version
-          else
-            echo "ERROR: No aarch64 GCC found!"
-            exit 1
+          echo "=== ld.lld Version ==="
+          ld.lld --version
+
+          echo "=== llvm-ar Version ==="
+          llvm-ar --version
+
+          # 检测 GCC 交叉编译器
+          echo "=== GCC cross-compilers ==="
+          ls "${TOOLCHAIN_BIN}/" | grep -E '(aarch64|arm).*gcc' || echo "(checking subdirectories...)"
+
+          # Mandi-Sa 工具链可能将 GCC 放在子目录
+          if [ -d "${TOOLCHAIN}/aarch64-linux-gnu/bin" ]; then
+            echo "--- aarch64-linux-gnu GCC ---"
+            ls "${TOOLCHAIN}/aarch64-linux-gnu/bin/" | grep gcc || true
+            "${TOOLCHAIN}/aarch64-linux-gnu/bin/aarch64-linux-gnu-gcc" --version 2>/dev/null || true
           fi
 
-          echo "=== GCC arm32 Version ==="
-          if command -v arm-linux-androideabi-gcc &>/dev/null; then
-            arm-linux-androideabi-gcc --version
-          elif command -v arm-linux-androideabikernel-gcc &>/dev/null; then
-            arm-linux-androideabikernel-gcc --version
-          else
-            echo "ERROR: No arm32 GCC found!"
-            exit 1
+          if [ -d "${TOOLCHAIN}/arm-linux-gnueabi/bin" ]; then
+            echo "--- arm-linux-gnueabi GCC ---"
+            ls "${TOOLCHAIN}/arm-linux-gnueabi/bin/" | grep gcc || true
+            "${TOOLCHAIN}/arm-linux-gnueabi/bin/arm-linux-gnueabi-gcc" --version 2>/dev/null || true
           fi
 
       # ─────────────────────────────────────────────
-      # 7. 编译内核
+      # 6. 编译内核
       # ─────────────────────────────────────────────
       - name: Build kernel
         run: |
@@ -189,34 +170,47 @@ jobs:
               arch/arm64/configs/vendor/xiaomi/raphael.config || true
           fi
 
-          # ── 自动检测 GCC 交叉编译前缀 ──
+          # ── 检测 GCC 交叉编译器前缀 ──
+          # Mandi-Sa 工具链使用 aarch64-linux-gnu- / arm-linux-gnueabi- 前缀
           GCC64_PREFIX=""
-          if ls "${TOOLCHAIN_GCC64}/bin"/aarch64-linux-android-gcc >/dev/null 2>&1; then
-            GCC64_PREFIX="aarch64-linux-android-"
-          elif ls "${TOOLCHAIN_GCC64}/bin"/aarch64-linux-androidkernel-gcc >/dev/null 2>&1; then
-            GCC64_PREFIX="aarch64-linux-androidkernel-"
-          else
-            echo "WARNING: No AOSP GCC aarch64 found, using Clang only"
-            GCC64_PREFIX=""
+          if [ -x "${TOOLCHAIN}/aarch64-linux-gnu/bin/aarch64-linux-gnu-gcc" ]; then
+            GCC64_PREFIX="aarch64-linux-gnu-"
+          elif [ -x "${TOOLCHAIN_BIN}/aarch64-linux-gnu-gcc" ]; then
+            GCC64_PREFIX="aarch64-linux-gnu-"
           fi
 
           GCC32_PREFIX=""
-          if ls "${TOOLCHAIN_GCC32}/bin"/arm-linux-androideabi-gcc >/dev/null 2>&1; then
-            GCC32_PREFIX="arm-linux-androideabi-"
-          elif ls "${TOOLCHAIN_GCC32}/bin"/arm-linux-androideabikernel-gcc >/dev/null 2>&1; then
-            GCC32_PREFIX="arm-linux-androideabikernel-"
-          else
-            echo "WARNING: No AOSP GCC arm32 found"
-            GCC32_PREFIX=""
+          if [ -x "${TOOLCHAIN}/arm-linux-gnueabi/bin/arm-linux-gnueabi-gcc" ]; then
+            GCC32_PREFIX="arm-linux-gnueabi-"
+          elif [ -x "${TOOLCHAIN_BIN}/arm-linux-gnueabi-gcc" ]; then
+            GCC32_PREFIX="arm-linux-gnueabi-"
           fi
 
-          echo "Detected GCC64 prefix: ${GCC64_PREFIX:-'(none)'}"
+          echo "Detected GCC64 prefix: ${GCC64_PREFIX:-'(none, Clang only)'}"
           echo "Detected GCC32 prefix: ${GCC32_PREFIX:-'(none)'}"
+
+          # ── 设置 GCC 路径 ──
+          GCC64_PATH=""
+          if [ -d "${TOOLCHAIN}/aarch64-linux-gnu/bin" ]; then
+            GCC64_PATH="${TOOLCHAIN}/aarch64-linux-gnu/bin"
+          fi
+          GCC32_PATH=""
+          if [ -d "${TOOLCHAIN}/arm-linux-gnueabi/bin" ]; then
+            GCC32_PATH="${TOOLCHAIN}/arm-linux-gnueabi/bin"
+          fi
 
           # ── 开始编译 ──
           CCACHE=""
           if [ "${{ github.event.inputs.enable_ccache }}" = "true" ]; then
             CCACHE="ccache"
+          fi
+
+          # 如果有 GCC 子目录, 临时加入 PATH
+          if [ -n "${GCC64_PATH}" ]; then
+            export PATH="${GCC64_PATH}:${PATH}"
+          fi
+          if [ -n "${GCC32_PATH}" ]; then
+            export PATH="${GCC32_PATH}:${PATH}"
           fi
 
           make -j$(nproc --all) O="${OUT_DIR}" \
@@ -234,7 +228,6 @@ jobs:
             STRIP=llvm-strip \
             LD=ld.lld \
             LDFLAGS="--lto-O0" \
-            CC_HOST_TOOLCHAIN="${CLANG_BIN}" \
             HOSTCC=clang \
             HOSTCXX=clang \
             HOSTAR=llvm-ar \
@@ -244,7 +237,7 @@ jobs:
           echo "Build exit code: ${PIPESTATUS[0]}"
 
       # ─────────────────────────────────────────────
-      # 8. 检查产物
+      # 7. 检查产物
       # ─────────────────────────────────────────────
       - name: Check build output
         run: |
@@ -258,7 +251,7 @@ jobs:
           du -h "${OUT_DIR}/arch/arm64/boot/Image.gz"
 
       # ─────────────────────────────────────────────
-      # 9. AnyKernel3 打包
+      # 8. AnyKernel3 打包
       # ─────────────────────────────────────────────
       - name: Package with AnyKernel3
         run: |
@@ -289,7 +282,7 @@ jobs:
           echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
 
       # ─────────────────────────────────────────────
-      # 10. 上传产物
+      # 9. 上传产物
       # ─────────────────────────────────────────────
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -301,14 +294,14 @@ jobs:
             ${{ env.KERNEL_DIR }}/build.log
 
       # ─────────────────────────────────────────────
-      # 11. 发布到 GitHub Releases (可选)
+      # 10. 发布到 GitHub Releases (可选)
       # ─────────────────────────────────────────────
       - name: Release kernel
         if: github.event.inputs.release_kernel == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: kernel-16-Hyper-${{ github.run_number }}
-          name: "Kernel 16-Hyper (AOSP Clang 22.0) #${{ github.run_number }}"
+          name: "Kernel 16-Hyper (LLVM 22.0) #${{ github.run_number }}"
           files: |
             ${{ env.ZIP_NAME }}
             ${{ env.OUT_DIR }}/arch/arm64/boot/Image.gz
@@ -316,7 +309,8 @@ jobs:
             ## Kernel Build Info
             - **Branch**: 16-Hyper
             - **Device**: Xiaomi K20 Pro (raphael)
-            - **Compiler**: AOSP Clang 22.0.2 (r596125)
+            - **Compiler**: LLVM 22.0.0 Full Toolchain (Mandi-Sa, PGO+BOLT)
+            - **Binutils**: 2.45.1
             - **Defconfig**: vendor/sm8150-perf_defconfig + xiaomi fragments
             - **Build**: ${{ github.run_number }}
             - **Date**: $(date '+%Y-%m-%d %H:%M:%S UTC')
