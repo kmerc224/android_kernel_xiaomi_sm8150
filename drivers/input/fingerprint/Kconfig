@@ -11,6 +11,14 @@ menuconfig INPUT_FINGERPRINT
 
 if INPUT_FINGERPRINT
 
+config FINGERPRINT_GOODIX_TA_CAPA
+    bool "Goodix fingerprint CAPA driver"
+    depends on INPUT_FINGERPRINT
+    help
+      Goodix fingerprint with capacitive array support.
+
+
+
 source "drivers/input/fingerprint/goodix_ta/Kconfig"
 source "drivers/input/fingerprint/fpc_tee/Kconfig"
 
