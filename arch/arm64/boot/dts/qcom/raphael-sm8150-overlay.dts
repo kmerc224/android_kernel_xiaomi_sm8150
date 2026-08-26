@@ -19,8 +19,8 @@
 #include <dt-bindings/clock/qcom,rpmh.h>
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 
-#include "xiaomi/overlay/raphael/raphael-sm8150.dtsi"
-#include "xiaomi/overlay/raphael/raphael-audio-overlay.dtsi"
+#include "raphael-sm8150.dtsi"
+#include "raphael-audio-overlay.dtsi"
 
 / {
 	model = "RAPHAEL";
