@@ -21,3 +21,11 @@ config SPI_XIAOMI_TP
 	default y if TOUCHSCREEN_NT36xxx_HOSTDL_SPI
 	help
 		Say Y if want use xiaomi touch panel.
+
+
+config TOUCHSCREEN_XIAOMI_TOUCHFEATURE
+	bool "Xiaomi touch feature framework"
+	depends on INPUT_TOUCHSCREEN
+	help
+	  Xiaomi unified touchscreen framework for touchfeature HAL.
+	  Required for HyperOS/MIUI edge rejection, game mode, etc.
